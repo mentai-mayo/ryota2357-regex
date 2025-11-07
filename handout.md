@@ -29,3 +29,16 @@ enum Token {
   End,
 }
 ```
+
+## Parser
+
+トークン列から構文木を生成する.
+
+```bnf
+<expression>     ::= <sub_expression> Token::End
+<sub_expression> ::= <sequence> '|' <sub_expression> | <sequence>
+<sequence>       ::= <sub_sequence> | ''
+<sub_sequence>   ::= <star sub_sequence> | <star>
+<star>           ::= <factor> '*' | <factor>
+<factor>         ::= '(' <sub_expression> ')' | Token::Character
+```
