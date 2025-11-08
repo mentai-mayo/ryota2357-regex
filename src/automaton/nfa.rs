@@ -23,6 +23,7 @@ impl Context {
 }
 
 /// NondeterministicFiniteAutomaton
+#[allow(clippy::upper_case_acronyms)]
 pub(crate) struct NFA {
     /// 開始状態
     pub start: NFAState,

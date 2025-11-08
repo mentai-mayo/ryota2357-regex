@@ -42,8 +42,6 @@ impl Lexer<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::lexer;
-
     use super::*;
 
     #[test]

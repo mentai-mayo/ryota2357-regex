@@ -190,7 +190,7 @@ pub struct ParseError {
 }
 impl ParseError {
     fn new(expected: &[Token], actual: Token) -> Self {
-        let expected = expected.iter().copied().collect::<Vec<_>>();
+        let expected: Vec<Token> = expected.to_vec();
         ParseError { expected, actual }
     }
 }

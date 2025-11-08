@@ -33,6 +33,7 @@ impl Context {
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
 pub(crate) struct DFA {
     pub(crate) start: DFAState,
     pub(crate) accepts: HashSet<DFAState>,
@@ -76,11 +77,7 @@ impl DFA {
                 // transition_map[char] = The set of states that can be transitioned by `char`.
                 let mut transition_map: HashMap<char, HashSet<NFAState>> = HashMap::new();
                 for look_state in &look_states {
-                    for chara in nfa
-                        .next_chars(*look_state)
-                        .iter()
-                        .filter_map(|c| c.is_some().then(|| c.unwrap()))
-                    {
+                    for chara in nfa.next_chars(*look_state).iter().filter_map(|c| *c) {
                         let mut next_states: Vec<NFAState> = nfa
                             .next_states(*look_state, Some(chara))
                             .into_iter()
