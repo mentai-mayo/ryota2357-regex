@@ -42,3 +42,11 @@ enum Token {
 <star>           ::= <factor> '*' | <factor>
 <factor>         ::= '(' <sub_expression> ')' | Token::Character
 ```
+
+# [#2](https://ryota2357.com/blog/2023/dfa-regex-with-rust-2/)
+
+構文木 -> NFA -> DFA と構築し, Regexを作成する.
+
+## NFA (非決定性有限オートマトン)
+
+## DFA (決定性有限オートマトン)

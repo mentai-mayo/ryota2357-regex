@@ -1,5 +1,7 @@
+use std::collections::HashSet;
 use std::error::Error;
 
+use crate::automaton::{Context, NFA, NFAState};
 use crate::lexer::{Lexer, Token};
 
 /// 構文木の頂点
@@ -10,6 +12,59 @@ pub(crate) enum Node {
     Star(Box<Node>),
     Union(Box<Node>, Box<Node>),
     Concat(Box<Node>, Box<Node>),
+}
+
+impl Node {
+    pub(crate) fn assemble(&self, context: &mut Context) -> NFA {
+        match self {
+            Node::Character(chara) => {
+                let start: NFAState = context.new_state();
+                let accept: NFAState = context.new_state();
+                NFA::new(start, [accept].into()).add_transition(start, *chara, accept)
+            }
+            Node::Empty => {
+                let start: NFAState = context.new_state();
+                let accept: NFAState = context.new_state();
+                NFA::new(start, [accept].into()).add_empty_transition(start, accept)
+            }
+            Node::Star(node) => {
+                let frag: NFA = node.assemble(context);
+                let start: NFAState = context.new_state();
+                let accepts: HashSet<NFAState> =
+                    frag.accepts.union(&[start].into()).cloned().collect();
+                let mut nfa = NFA::new(start, accepts)
+                    .merge_transition(&frag)
+                    .add_empty_transition(start, frag.start);
+                for accept in &frag.accepts {
+                    nfa = nfa.add_empty_transition(*accept, frag.start);
+                }
+                nfa
+            }
+            Node::Union(n1, n2) => {
+                let frag1: NFA = n1.assemble(context);
+                let frag2: NFA = n2.assemble(context);
+                let start: NFAState = context.new_state();
+                let accepts: HashSet<NFAState> =
+                    frag1.accepts.union(&frag2.accepts).cloned().collect();
+                NFA::new(start, accepts)
+                    .merge_transition(&frag1)
+                    .merge_transition(&frag2)
+                    .add_empty_transition(start, frag1.start)
+                    .add_empty_transition(start, frag2.start)
+            }
+            Node::Concat(n1, n2) => {
+                let frag1: NFA = n1.assemble(context);
+                let frag2: NFA = n2.assemble(context);
+                let mut fragment = NFA::new(frag1.start, frag2.accepts.clone())
+                    .merge_transition(&frag1)
+                    .merge_transition(&frag2);
+                for accept in &frag1.accepts {
+                    fragment = fragment.add_empty_transition(*accept, frag2.start)
+                }
+                fragment
+            }
+        }
+    }
 }
 
 /// パーサ
@@ -135,8 +190,8 @@ pub struct ParseError {
 }
 impl ParseError {
     fn new(expected: &[Token], actual: Token) -> Self {
-        let expected = expected.iter().map(|token| *token).collect::<Vec<_>>();
-        return ParseError { expected, actual };
+        let expected = expected.iter().copied().collect::<Vec<_>>();
+        ParseError { expected, actual }
     }
 }
 impl Error for ParseError {}
@@ -160,6 +215,103 @@ impl std::fmt::Display for ParseError {
 mod tests {
     use crate::lexer::*;
     use crate::parser::*;
+
+    #[test]
+    fn from_character_node() {
+        let nfa = NFA::from_node(Node::Character('a'));
+
+        // -> 0 --a--> 1
+        // accept: 1
+        assert_eq!(nfa.start, NFAState(0));
+        assert_eq!(nfa.accepts, [NFAState(1)].into());
+        assert_eq!(
+            nfa.transition,
+            [(NFAState(0), [(Some('a'), [NFAState(1)].into())].into())].into()
+        );
+    }
+
+    #[test]
+    fn from_empty_node() {
+        let nfa = NFA::from_node(Node::Empty);
+
+        // -> 0 --ε--> 1
+        // accept: 1
+        assert_eq!(nfa.start, NFAState(0));
+        assert_eq!(nfa.accepts, [NFAState(1)].into());
+        assert_eq!(
+            nfa.transition,
+            [(NFAState(0), [(None, [NFAState(1)].into())].into())].into()
+        );
+    }
+
+    #[test]
+    fn from_star_node() {
+        let nfa = NFA::from_node(Node::Star(Box::new(Node::Character('a'))));
+
+        //              /<--ε--\
+        // -> 2 --ε--> 0 --a--> 1
+        // accept: 2, 1
+        assert_eq!(nfa.start, NFAState(2));
+        assert_eq!(nfa.accepts, [NFAState(2), NFAState(1)].into());
+        assert_eq!(
+            nfa.transition,
+            [
+                (NFAState(2), [(None, [NFAState(0)].into())].into()),
+                (NFAState(0), [(Some('a'), [NFAState(1)].into())].into()),
+                (NFAState(1), [(None, [NFAState(0)].into())].into())
+            ]
+            .into()
+        );
+    }
+
+    #[test]
+    fn from_union_node() {
+        let nfa = NFA::from_node(Node::Union(
+            Box::new(Node::Character('a')),
+            Box::new(Node::Character('b')),
+        ));
+
+        //     /--ε--> 0 --a--> 1
+        // -> 4
+        //     \--ε--> 2 --b--> 3
+        // accept: 1, 3
+        assert_eq!(nfa.start, NFAState(4));
+        assert_eq!(nfa.accepts, [NFAState(1), NFAState(3)].into());
+        assert_eq!(
+            nfa.transition,
+            [
+                (
+                    NFAState(4),
+                    [(None, [NFAState(0), NFAState(2)].into())].into()
+                ),
+                (NFAState(0), [(Some('a'), [NFAState(1)].into())].into()),
+                (NFAState(2), [(Some('b'), [NFAState(3)].into())].into())
+            ]
+            .into()
+        );
+    }
+
+    #[test]
+    fn from_concat_node() {
+        let nfa = NFA::from_node(Node::Concat(
+            Box::new(Node::Character('a')),
+            Box::new(Node::Character('b')),
+        ));
+
+        // -> 0 --a--> 1 --ε--> 2 --b--> 3
+        // accept: 3
+        assert_eq!(nfa.start, NFAState(0));
+        assert_eq!(nfa.accepts, [NFAState(3)].into());
+        assert_eq!(
+            nfa.transition,
+            [
+                (NFAState(0), [(Some('a'), [NFAState(1)].into())].into()),
+                (NFAState(1), [(None, [NFAState(2)].into())].into()),
+                (NFAState(2), [(Some('b'), [NFAState(3)].into())].into())
+            ]
+            .into()
+        );
+    }
 
     #[test]
     fn expression() {
